@@ -1,0 +1,1376 @@
+'##----------------------------------------------------------------------------------##
+'## Driver Script
+'##----------------------------------------------------------------------------------##
+'##
+'## VERSION: 1.0
+'##
+'## DESCRIPTION:
+'##
+'##   This script controls the entire E2E flow of the Test Case.
+'##----------------------------------------------------------------------------------##
+'#
+
+'# REVISION HISTORY:
+
+'#
+'# DATE:                           PERSON:                               REASON:
+'# -----------   --------------  ----------------------------------------------------##
+'# 11-March-2014            POC Team                             Original.
+
+
+
+'To get the folder path at run time
+    Dim App
+    Set App = CreateObject("QuickTest.Application")
+    Environment.Value("Folder_Path")=App.Folders.Item(2)    
+    EnvMngr_Path=Environment.Value("Folder_Path") & "\TestData"
+    GenLib_Path=Environment.Value("Folder_Path") & "\TestLibrary\Development\GenLib.qfl"
+    
+    ' Loading the GenLib file dynamically
+    LoadFunctionLibrary GenLib_Path
+    
+    'To kill the processesM
+    General_CloseProcess()
+
+        'Call to Environment manager function    
+    Environment_Manager(EnvMngr_Path)
+
+    
+    ''Call To Intial settings functions    
+    Intial_Test_Settings()
+        
+    'Login to the application
+    'Login()
+    
+    'Executes the screens based on the selection in the Flow manager table
+   'Batch_Iteration ()
+
+       Get_Batch_Seq_Details()
+       
+       
+
+
+    
+
+Public Folder_Path, get_Conn, get_Conn_Result, user, password
+
+
+ ' DataTable.Value("Fund" ,dtRTSheet)=RandomFundID
+Function Environment_Manager(Environment_Manage) '//Gets the paths of the test case
+    Set conn_Environ = CreateObject("ADODB.Connection")
+    Set objRecSet_Environ = CreateObject("ADODB.Recordset")
+    'conn_Environ.ConnectionString="Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & Environment_Manage & "\VM_Manager.accdb;Persist Security Info=False"
+    conn_Environ.ConnectionString= "DRIVER={Microsoft ODBC for Oracle};SERVER=(DESCRIPTION=(ADDRESS=(COMMUNITY = tcp.igefi.tld)(PROTOCOL=TCP)(Host=lux-str-odbdev1)(Port=1521))(CONNECT_DATA=(SID=QCAUTO)));UID=GI;PWD=GI;"
+    conn_Environ.Open
+    env=UCase (Environment.Value("LocalHostName"))
+    'Sql="Select Library_Path, Repository_Path, Screen_Functions_Path, Environment_Path, Screenshot_Path, Oracle_UserCode, Oracle_UserPassword from Environment_Manager Where VM_Number='" & env &"'"
+
+    Sql="Select "&Chr(34)&"Library_Path"&Chr(34)&","& Chr(34)&"Repository_Path"&Chr(34)&","& Chr(34)&"Screen_Functions_Path"&Chr(34)&","& Chr(34)&"Environment_Path"&Chr(34)&","& Chr(34)&"Screenshot_Path"&Chr(34)&","& Chr(34)&"Oracle_UserCode"&Chr(34)&","& Chr(34)&"Oracle_UserPassword"&Chr(34) & " from Environment_Manager Where "&Chr(34)&"VM_Number"&Chr(34)&"='" & env &"'"
+
+    objRecSet_Environ.Open Sql, conn_Environ
+    objRecSet_Environ.MoveFirst
+    Environment.Value("Library_Path")=objRecSet_Environ.Fields(0).Value
+    Environment.Value("Repository_Path")=objRecSet_Environ.Fields(1).Value
+    Environment.Value("Script_Path")=objRecSet_Environ.Fields(2).Value
+    Environment.Value("Environment_Path")=objRecSet_Environ.Fields(3).Value
+    Environment.Value("Screenshot_Path")=objRecSet_Environ.Fields(4).Value
+    user=objRecSet_Environ.Fields(5).Value
+    password=objRecSet_Environ.Fields(6).Value
+    'Environment.Value("OR_Size")=0
+    objRecSet_Environ.Close
+    conn_Environ.Close
+End Function
+
+'Function Batch_Iteration() '//Gets the Batch ID to be executed
+'    Set get_Conn_Result = Get_Connection_Results
+'    Set get_Conn =Get_Connection
+'    Set conn_Batch = get_Conn
+'    Set objRecSet_Batch = CreateObject("ADODB.Recordset")
+'    env=UCase (Environment.Value("LocalHostName"))
+'    'Sql="Select Batch_ID, Test_Case_Name,Screenshot  from Batch_Manager Where Run=True and Local_VM='" &  Trim (Cstr (env)) & "'"
+'    Sql="Select "&Chr(34)&"Batch_Id"&Chr(34)&", "&Chr(34)&"Test_Case_Name"&Chr(34)&" ,"&Chr(34)&"Screenshot"&Chr(34)&" from Batch_Manager Where "&Chr(34)&"Run"&Chr(34)&"='True' and "&Chr(34)&"Local_VM"&Chr(34)&"='" &  Trim (Cstr (env)) & "'"
+'
+'    objRecSet_Batch.Open Sql, conn_Batch
+'    While (Not objRecSet_Batch.EOF)
+'        Batch_Execution objRecSet_Batch.Fields(0).Value, objRecSet_Batch.Fields(1).Value, objRecSet_Batch.Fields(2).Value
+'        objRecSet_Batch.MoveNext
+'    Wend
+'
+'    Batch_Iteration()
+'    
+'    objRecSet_Batch.Close
+'    conn_Batch.Close
+'    get_Conn_Result.Close
+'End Function
+
+Function Batch_Execution(batch_ID, test_Case_Name, screenshot)
+        strStrtTime= FormatDateTime(Now,0)
+        Environment.Value("Test_ID")=batch_ID
+        'Login to the application
+        Environment.Value("UserCode")=user
+        Environment.Value("UserPassword")=password
+    
+            Login()
+        
+        Environment.Value("Test_Case_Name")=test_Case_Name
+        Environment.Value("Screenshot")=screenshot
+        Environment.Value("Run_ID") =Log_Test_Result (Environment.Value("Test_ID") )
+        Call Delete_File(Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID")& ".doc") ' To delete the document after compressing
+        Call Delete_File(Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID")& ".xls")
+        Insert_Batch_Run_ID Environment.Value("Test_ID"), Environment.Value("Run_ID")
+        Time_Update "Test_Result_Master", "Start_Time"
+        Environment.Value("Exception")="Start"
+
+         'Call Check_Functions_In_FlowManager()  ' To select all the functions in the flowmanager wrt to batch_ID
+        '//Executes the flow of the test case
+        Flow Environment.Value("Test_ID")
+
+        Time_Update "Test_Result_Master", "End_Time"
+        Update_Batch_Status Environment.Value("Test_ID"), Environment.Value("Run_ID")
+        'If Environment.Value("Exception")="Stop" Then
+        '    Exit Function
+        'End If
+        
+        UnLoad_OR()    'Unloads the repositories and loads common.tsr
+        Logout()    'Logs out of the application
+        
+        strEndTime = FormatDateTime(Now,0)
+        TestTimeDiff strStrtTime,strEndTime, "Test_Result_Master", "Execution_Time"
+
+        If Environment.Value("Screenshot")="True" Then
+        '
+                    'To embed the Excel step result into the word document
+                    Embed_Excel()   
+                    ' Updates the status of the end result into the word document
+                    TestCreateWordTCHeader()            
+                    'Compressing the screenshot  file
+                    WindowsZip()
+    
+            
+            DataTable.DeleteSheet("Test_Result_Details")
+        DataTable.DeleteSheet("Test_Result_Master")
+
+        End If
+        
+
+End Function
+
+Public Sub Insert_Batch_Run_ID (Batch_ID, RunID)
+   Environment.Value("Batch_Run_ID")=RunID   ' Added on March 3rd 2015
+    Set cnn = get_Conn_Result
+      Set cmd= CreateObject("ADODB.Command")
+    Set cmd.ActiveConnection = cnn
+    'sql="Insert Into Test_Result_Master ( Batch_ID , Batch_Run_ID, Client_ID, Version, Executed_By) Values( '" & Batch_ID & "', '" & RunID  &"', '" & Environment.Value("Client_ID") & "', '" & Environment.Value("Version") & "','" & Environment.Value("UserCode") & "')"
+    sql = "Insert Into Test_Result_Master ( "&Chr(34)&"BATCH_ID"&Chr(34)&" , "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&", "&Chr(34)&"CLIENT_ID"&Chr(34)&", "&Chr(34)&"VERSION"&Chr(34)&", "&Chr(34)&"Executed_By"&Chr(34)&" ) Values( '" & Batch_ID & "', '" & RunID  &"', '" & Environment.Value("Client_ID") & "', '" & Environment.Value("Version") & "', '" & Environment.Value("UserCode") & "')"
+    cmd.CommandText =sql
+    cmd.Execute    
+  Set cmd = Nothing
+End Sub
+
+
+Function Flow(Batch_ID) '//Gets the Flow
+    Set conn_Flow = get_Conn
+    Set objRecSet_Flow = CreateObject("ADODB.Recordset")
+    'Sql="Select Batch_ID, Screen_Functionality, From_Iteration, To_Iteration from Flow_manager Where Batch_ID= '" & Batch_ID & "' and Execute = True Order By Seq_No Asc"
+
+    Sql="Select "&Chr(34)&"Batch_ID"&Chr(34)&", "&Chr(34)&"Screen_Functionality"&Chr(34)&", "&Chr(34)&"From_Iteration"&Chr(34)&", "&Chr(34)&"To_Iteration"&Chr(34)&" from Flow_manager Where "&Chr(34)&"Batch_ID"&Chr(34)&"= '" & Batch_ID & "' and "&Chr(34)&"Execute"&Chr(34)&" = 'True' Order By "&Chr(34)&"Seq_No"&Chr(34)&" Asc"
+
+    objRecSet_Flow.Open Sql, conn_Flow
+    While (Not objRecSet_Flow.EOF)
+        Run_Function objRecSet_Flow.Fields(0).Value, objRecSet_Flow.Fields(1).Value, objRecSet_Flow.Fields(2).Value, objRecSet_Flow.Fields(3).Value
+        If Environment.Value("Exception")="Stop" Then
+            Exit Function
+        End If
+        objRecSet_Flow.MoveNext
+    Wend
+    Set conn_Flow = Nothing
+    Set objRecSet_Flow = Nothing
+End Function
+
+
+Function Run_Function(Batch_ID, Function_Name, From_Iteration, To_Iteration)
+       Environment.Value("dtRTSheet")=Function_Name
+    dtRTSheet=Function_Name
+    '//Loads data Sheet at runtime
+        Load_DataTable Batch_ID, dtRTSheet
+
+    '//Load ObjectRepository
+    CallScript dtRTSheet
+    CallOR ()
+    '//Run Action
+    For i=From_Iteration To To_Iteration
+        strStrtTime= FormatDateTime(Now,0)
+        DataTable.GetSheet(dtRTSheet).SetCurrentRow i
+
+
+        '//Will execute the action
+
+        
+               RunAction()
+        
+        strEndTime = FormatDateTime(Now,0)
+        Time_Update "Test_Result_Details", "End_Function_Time"
+        TestTimeDiff strStrtTime,strEndTime, "Test_Result_Details", "Execution_Time"    
+    Next
+    DataTable.DeleteSheet(dtRTSheet)
+    UnLoad_OR()
+End Function
+
+
+Function CallScript(dtRTSheet)
+    ScriptPath=Environment.Value("Script_Path") & "\" & dtRTSheet & "\Script.mts"
+    LoadFunctionLibrary ScriptPath
+End Function
+
+
+
+
+Function Load_DataTable(Batch_ID, dtRTSheet)
+
+   dtRTSheet = ucase(dtRTSheet)
+    If dtRTSheet="Test_Result_Details" Or dtRTSheet="Test_Result_Master" Then
+        Set dataTable_conn = get_Conn_Results
+    Else
+        Set dataTable_conn = get_Conn
+    End If
+    Set objRecSet = CreateObject("ADODB.Recordset")
+    'Sql="Select Count(*) from " & dtRTSheet &" Where Batch_ID='" & Batch_ID & "'"
+    sql = "select column_name from user_tab_columns where table_name= '" & dtRTSheet & "' and column_id in (1)"
+
+    objRecSet.Open sql, dataTable_conn
+
+    sBatchID = objRecSet.Fields(0).Value
+
+    objRecSet.Close
+    
+    sql = "select column_name from user_tab_columns where table_name= '" & dtRTSheet & "' and column_id in (2)"
+
+    objRecSet.Open sql, dataTable_conn
+
+    sSlNo = objRecSet.Fields(0).Value
+
+    objRecSet.Close
+
+    Sql="Select Count(*) from " & dtRTSheet &" Where " & Chr(34) & sBatchID & Chr(34) & "='" & Batch_ID & "'"
+    
+    objRecSet.Open Sql, dataTable_conn
+    'sql="Select * from " & dtRTSheet &" Where Batch_ID='" & Batch_ID & "' Order By Sl_No Asc"
+    sql="Select * from " & dtRTSheet &" Where " & Chr(34) & sBatchID & Chr(34) & "='" & Batch_ID & "' Order By " & Chr(34) & sSlNo & Chr(34) & " asc"
+    Load_Table objRecSet.Fields(0).Value, dtRTSheet, sql
+
+    Set dataTable_conn = Nothing
+    Set objRecSet = Nothing
+End Function
+
+Function Load_Table(Column_count, dtRTSheet, Sql)
+    If dtRTSheet="Test_Result_Details" Or dtRTSheet="Test_Result_Master" Then
+        Set conn = get_Conn_Result
+    Else
+            Set conn = get_Conn
+    End If
+    Set objRecSet = CreateObject("ADODB.Recordset")
+    objRecSet.Open Sql, conn
+    objRecSet.MoveFirst
+        intRowNum =1
+    DataTable.AddSheet(dtRTSheet)
+    DataTable.GetSheet(dtRTSheet).SetCurrentRow intRowNum 
+
+    '//Loads columns
+    count_row=0
+    On error resume next
+        For i=0 to 460
+            On error resume next
+            objRecSet.Fields(i).Name
+            If ERR.NUMBER<>450  Then
+                Column_count=i
+                Exit for
+            End If
+            DataTable.GetSheet(dtRTSheet).AddParameter Trim (Cstr (objRecSet.Fields(i).Name)),""
+        Next
+    Err.Clear
+
+    Dim count_row
+    count_row=0
+    objRecSet.MoveFirst
+    While (Not objRecSet.EOF)
+        count_row=count_row+1
+        objRecSet.MoveNext
+    Wend
+    
+        objRecSet.MoveFirst
+        While (Not objRecSet.EOF)
+            For i = 0 to Column_count
+                DataTable(Trim (Cstr (objRecSet.Fields(i).Name)),dtRTSheet)=Trim (Cstr (objRecSet.Fields(i).Value))
+            Next
+              intRowNum = intRowNum+1
+              DataTable.GetSheet(dtRTSheet).SetCurrentRow intRowNum 
+            objRecSet.MoveNext
+        Wend
+    Set objRecSet = Nothing
+    Set conn = Nothing
+End Function
+
+
+
+Function UnLoad_OR()
+    Set qtpapp=CreateObject("QuickTest.Application")
+    Set qtpRepositories=qtpapp.Test.Actions("Action1").ObjectRepositories
+    qtpRepositories.RemoveAll
+    'qtpapp.Test.Save
+    Set qtpRepositories=Nothing
+    Set qtpapp=Nothing
+    Load_OR("common")
+End Function
+
+Function Load_OR(OR_Name)
+    OR_File=Environment.Value("Repository_Path") & "\" &  OR_Name & ".tsr"
+    actName=Environment.Value("ActionName")
+    Set qtApp = CreateObject("QuickTest.Application")
+    Set qtRepositories = qtApp.Test.Actions(actName).ObjectRepositories
+    If qtRepositories.Find(OR_File) = -1 Then
+        qtRepositories.Add OR_File, 1.
+    End If
+End Function
+
+Public function Get_Connection()
+ Set cnn= CreateObject("ADODB.Connection")
+ 'cnn.ConnectionString = Environment.Value("DataBasePath") & ""
+ cnn.ConnectionString = "DRIVER={Microsoft ODBC for Oracle};SERVER=(DESCRIPTION=(ADDRESS=(COMMUNITY = tcp.igefi.tld)(PROTOCOL=TCP)(Host=lux-str-odbdev1)(Port=1521))(CONNECT_DATA=(SID=QCAUTO)));UID=GI;PWD=GI;"
+ cnn.open
+ Set Get_Connection = cnn
+End function
+
+Public function Get_Connection_Results()
+ Set cnn= CreateObject("ADODB.Connection")
+ 'cnn.ConnectionString = Environment.Value("DataBasePathResults")
+ cnn.ConnectionString = "DRIVER={Microsoft ODBC for Oracle};SERVER=(DESCRIPTION=(ADDRESS=(COMMUNITY = tcp.igefi.tld)(PROTOCOL=TCP)(Host=lux-str-odbdev1)(Port=1521))(CONNECT_DATA=(SID=QCAUTO)));UID=GI;PWD=GI;"
+
+ cnn.open
+ Set Get_Connection_Results = cnn
+End function
+
+
+Public Sub Handle_Check_Boxes(FormName)
+ dtRTSheet= Environment.Value("dtRTSheet")
+ Set ChkBox = description.Create
+ 
+ ChkBox("micclass").Value = "OracleCheckbox"
+ 
+ Set colChk = OracleFormWindow(FormName).ChildObjects(ChkBox)
+
+ NewColumnAdded = False
+ 
+ For i=0 to colChk.count-1
+    '// Applicable only if the checkbox is editable in the screen
+    If colChk(i).GetROProperty("Enabled") = TRUE Then
+       '// Following line replaced by the if block by WCC on 07/07/2010
+       '//ParamName = "CB_" + colChk(i).GetROProperty("prompt") 
+       If colChk(i).GetROProperty("prompt") <> "" Then
+           ParamName = "CB_" + colChk(i).GetROProperty("prompt") 
+       Else
+           ParamName = "CB_" +  colChk(i).GetROProperty("label") 
+       End If
+       '// Special characters need to be removed for the Excel column header identification
+       ParamName = Replace(ParamName," ","_")
+       ParamName = Replace(ParamName,"/","_")
+       ParamName = Replace(ParamName,"+","_")
+       ParamName = Replace(ParamName,"-","_")
+       ParamName = Replace(ParamName,"*","_")
+       ParamName = Replace(ParamName,"%","percent")
+       ParamName = Replace(ParamName,".","")
+                           ParamName = Replace(ParamName,"&","and")
+                           ParamName = Replace(ParamName,"#","_")
+                           ParamName = Replace(ParamName,";","_")
+                           ParamName = Replace(ParamName,",","_")
+
+       '// Check parameter exists in data table for the checkbox 
+       On Error Resume Next
+       Err.Clear
+     ParamExists =  DataTable (ParamName , dtRTSheet)
+     If Err.Number = 0 then
+       ParamExists = TRUE
+     Else
+         ParamExists = FALSE
+     End If
+       On Error Goto 0 
+     
+     If ParamExists = TRUE Then
+       If DataTable (ParamName, dtRTSheet) = "Y"  Then
+         colChk(i).Select
+       ElseIf DataTable( ParamName, dtRTSheet) = "N" Then
+         colChk(i).Clear
+       End If '//  param = Y
+     Else
+       'NewColumnAdded = True
+       'DataTable.LocalSheet.AddParameter ParamName,""
+     End If '// Param Exists
+   End If '// Check box Enabled
+ Next
+
+
+ 
+End Sub
+
+
+Public Function  Log_Test_Result(BATCH_ID)
+    Dim BATCH_RUN_ID, Max_Run_ID
+    Max_Run_ID=""
+    Set conn_Log = get_Conn_Result
+    Set objRecSet_Log = CreateObject("ADODB.Recordset")
+    'Sql="Select Max(Cint (Batch_Run_ID)) From Test_Result_Master Where Batch_ID ='" & BATCH_ID & "' and Client_ID ='" & Environment.Value("Client_ID")  & "' and Version = '" & Environment.Value("Version") & "'"
+    'Sql="Select Count("&Chr(34)&"BATCH_RUN_ID"&Chr(34)&") From Test_Result_Master Where "&Chr(34)&"BATCH_ID"&Chr(34)&" ='" & BATCH_ID & "' and "&"CLIENT_ID"&" ='" & Environment.Value("Client_ID")  & "' and "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+
+    Sql="Select Max(to_number("&Chr(34)&"BATCH_RUN_ID"&Chr(34)&")) From Test_Result_Master Where "&Chr(34)&"BATCH_ID"&Chr(34)&" ='" & BATCH_ID & "' and "&"CLIENT_ID"&" ='" & Environment.Value("Client_ID")  & "' and "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+    'Sql="Select "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&" From Test_Result_Master Where "&Chr(34)&"BATCH_ID"&Chr(34)&" ='" & BATCH_ID & "' and "&"CLIENT_ID"&" ='" & Environment.Value("Client_ID")  & "' and "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+    objRecSet_Log.Open Sql, conn_Log
+    objRecSet_Log.MoveFirst
+    Max_Run_ID=objRecSet_Log.Fields(0).Value
+'    counter = 0
+'While objRecSet_Log.Fields(0).Value 
+'counter = couter+1
+'    objRecSet_Log.MoveNext
+'Wend
+
+    'Max_Run_ID=counter
+    If Max_Run_ID <> "" Then
+        BATCH_RUN_ID=cint(Max_Run_ID) + 1
+    Else
+        BATCH_RUN_ID=1
+    End If
+    Set objRecSet_Log = Nothing
+    Set conn_Log  = Nothing
+    Log_Test_Result = BATCH_RUN_ID
+End Function
+
+'//Function to update results in Test_Result_Details
+Public Sub Log_Test_Result_Details(ActionStatus, TestID, RunID, IterationNo, ActionName,ActionResult)
+    Dim Seq_No, Max_Seq_No, Batch_ID, Batch_Run_ID
+    Max_Seq_No=""
+
+        Call TestReportWordResult("")
+          ActionName=Environment.Value("dtRTSheet")
+  Set cnn =get_Conn_Result
+  'Set cnn = Get_Connection
+  Set rs= CreateObject("ADODB.RecordSet")
+    'sql="Select Max (Seq_No) From Test_Result_Details Where Batch_ID ='" & TestID &  "' and Batch_Run_ID ='" & RunID  &"' and Client_ID ='" & Environment.Value("Client_ID")  & "' and Version = '" & Environment.Value("Version") & "'"
+    sql="Select Max ("&Chr(34)&"Seq_No"&Chr(34)&") From Test_Result_Details Where "&Chr(34)&"Batch_ID"&Chr(34)&" ='" & TestID &  "' and "&Chr(34)&"Batch_Run_ID"&Chr(34)&" ='" & RunID  &"' and "&Chr(34)&"CLIENT_ID"&Chr(34)&" ='" & Environment.Value("Client_ID")  & "' and "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+  rs.Open sql , cnn
+    rs.MoveFirst
+    Max_Seq_No=rs.Fields(0).Value
+    If Max_Seq_No <> "" Then
+        Seq_No= Cint(Max_Seq_No) + 1
+    Else
+        Seq_No=1
+    End If
+    Environment.Value("Seq_No")=Seq_No
+    Set rs=nothing
+    Set cmd= CreateObject("ADODB.Command")
+    Set cmd.ActiveConnection = cnn
+    'sql="Insert Into Test_Result_Details ( Batch_ID , Batch_Run_ID, Seq_No, Function, Function_Status, Function_Result , Client_ID, Version, Executed_By) Values( '" & TestID & "', '" & RunID  &"', " & Seq_No & ", '" & ActionName & "', '" & ActionStatus & "', '" & ActionResult & "', '" & Environment.Value("Client_ID") & "', '" & Environment.Value("Version") & "','" & Environment.Value("UserCode") & "')"
+
+    sql="Insert Into Test_Result_Details ( "&Chr(34)&"Batch_ID"&Chr(34)&" , "&Chr(34)&"Batch_Run_ID"&Chr(34)&", "&Chr(34)&"Seq_No"&Chr(34)&", "&Chr(34)&"Function"&Chr(34)&", "&Chr(34)&"Function_Status"&Chr(34)&", "&Chr(34)&"Function_Result"&Chr(34)&" , "&Chr(34)&"CLIENT_ID"&Chr(34)&", "&Chr(34)&"VERSION"&Chr(34)&" ) Values( '" & TestID & "', '" & RunID  &"', " & Seq_No & ", '" & ActionName & "', '" & ActionStatus & "', '" & ActionResult & "', '" & Environment.Value("Client_ID") & "', '" & Environment.Value("Version") & "')"
+
+    cmd.CommandText =sql
+    cmd.Execute
+  Set cmd = Nothing
+  Set cnn = Nothing
+End sub
+
+Public Sub Update_Batch_Status(Batch_ID, Batch_Run_ID)
+  Set cnn = get_Conn_Result
+  Set rs= CreateObject("ADODB.RecordSet")
+    'str="Select count (*)  From Test_Result_Details Where Batch_ID = '" & Batch_ID & "' And Batch_Run_ID = '" & Batch_Run_ID & "' And Function_Status = 'FAILED' And Client_ID = '" & Environment.Value("Client_ID") & "' And Version = '" & Environment.Value("Version") & "'"
+    str="Select count (*)  From Test_Result_Details Where "&Chr(34)&"Batch_ID"&Chr(34)&" = '" & Batch_ID & "' And "&Chr(34)&"Batch_Run_ID"&Chr(34)&" = '" & Batch_Run_ID & "' And "&Chr(34)&"Function_Status"&Chr(34)&" = 'FAILED' OR " &Chr(34)&"Function_Status" &Chr(34)& "='' And "&Chr(34)&"CLIENT_ID"&Chr(34)&" = '" & Environment.Value("Client_ID") & "' And "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+  rs.Open str, cnn
+  v_Failed_Cnt = rs.Fields(0).Value
+  Set rs=nothing
+  Set cmd= CreateObject("ADODB.Command")
+  Set cmd.ActiveConnection = cnn
+  If v_Failed_Cnt <> "0" Then
+      'cmd.CommandText = "Update Test_Result_Master Set Batch_Status = 'FAILED' Where Batch_ID = '" & Batch_ID & "' And Batch_Run_ID  = '" & Batch_Run_ID & "' And Client_ID = '" & Environment.Value("Client_ID") & "' And Version = '" & Environment.Value("Version") & "'"
+        cmd.CommandText = "Update Test_Result_Master Set "&Chr(34)&"BATCH_STATUS"&Chr(34)&" = 'FAILED' Where "&Chr(34)&"BATCH_ID"&Chr(34)&" = '" & Batch_ID & "' And "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&"  = '" & Batch_Run_ID & "' And "&Chr(34)&"CLIENT_ID"&Chr(34)&" = '" & Environment.Value("Client_ID") & "' And "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+  Else
+      'cmd.CommandText = "Update Test_Result_Master Set Batch_Status = 'PASSED' Where Batch_ID = '" & Batch_ID & "' And Batch_Run_ID  = '" & Batch_Run_ID & "' And Client_ID = '" & Environment.Value("Client_ID") & "' And Version = '" & Environment.Value("Version") & "'"
+        cmd.CommandText = "Update Test_Result_Master Set "&Chr(34)&"BATCH_STATUS"&Chr(34)&" = 'PASSED' Where "&Chr(34)&"BATCH_ID"&Chr(34)&" = '" & Batch_ID & "' And "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&"  = '" & Batch_Run_ID & "' And "&Chr(34)&"CLIENT_ID"&Chr(34)&" = '" & Environment.Value("Client_ID") & "' And "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"       
+  End If
+  cmd.Execute
+
+  Set cmd = Nothing
+  Set cnn  = Nothing
+End sub
+
+Public Function Check_Functions_In_FlowManager()
+    batch_ID=Environment.Value("Test_ID")
+    Set cnn = Get_Connection
+    Set cmd= CreateObject("ADODB.Command")
+    Set cmd.ActiveConnection = cnn
+    'cmd.CommandText="UPDATE Flow_Manager SET ["&Chr(34)&"Execute"&Chr(34)&"] = 'True' WHERE " &Chr(34)&"Batch_ID"&Chr(34)&" = '" & batch_ID & "'"    
+    cmd.CommandText="UPDATE Flow_Manager SET " &Chr(34)&"Execute"&Chr(34)& " = 'True' WHERE " &Chr(34)&"Batch_ID"&Chr(34)&" = '" & batch_ID & "'"    
+    cmd.Execute
+    Set cmd = Nothing
+    Set cnn  = Nothing
+End Function
+
+Public Sub Delete_Report(ReportFullName, Action_Name)
+  Set FileSystemObj = CreateObject("Scripting.FileSystemObject")
+  
+  If FileSystemObj.FileExists(ReportFullName) = True Then
+   On error resume next
+   FileSystemObj.DeleteFile ReportFullName, FORCE
+'   If FileSystemObj.FileExists(ReportFullName) = True Then
+'     v_Message = "Could not delete existing report: " + ReportFullName
+'     Reporter.ReportEvent micWarning , "Action Status" ,   v_Message
+'     Log_Test_Result_Details  "WARNING", Environment.Value("Test_ID"), Environment.Value("Run_ID"), Environment("ActionIteration"),Action_Name,  v_Message
+'   End If
+   On error goto 0
+  End If
+  
+  Set FileSystemObj = Nothing
+End Sub
+
+Public Sub Check_Report(ReportFullName, Action_Name)
+  Set FileSystemObj = CreateObject("Scripting.FileSystemObject")
+    Action_Name=Environment.Value("dtRTSheet")
+    If instr(ucase(ReportFullName),".PDF") Then
+        Embed_Pdf(ReportFullName)
+    End If
+    Dim file_Name
+    MyArray = Split(ReportFullName, "\", -1, 1)
+    file_Name =   "...\" & MyArray (Ubound (MyArray)-2) & "\" & MyArray (Ubound (MyArray)-1) & "\" & MyArray (Ubound (MyArray))  
+
+    If instr(ucase(ReportFullName),"S:\") Then
+        Embed_Pdf(ReportFullName)
+    End If
+'  If FileSystemObj.FileExists(ReportFullName) = True Then
+'  Embed_Pdf(ReportFullName)
+'  End If
+    v_Message = "Report generated successfully:  " + file_Name
+    Reporter.ReportEvent micPass , "Action Status" ,   v_Message
+    Log_Test_Result_Details  "PASSED", Environment.Value("Test_ID"), Environment.Value("Run_ID"), Environment("ActionIteration"),Action_Name, v_Message
+  Set FileSystemObj = Nothing
+End Sub
+
+'// Added the below function by SSK on 02/09/2013
+'// For handling the warning messages
+Function  Handle_Message_Boxes()  '// Cleanup the error(if any)
+    While OracleNotification("title:=Forms").Exist(0) Or OracleNotification("title:=Warning").Exist(0)  '// Cleanup the error(if any)
+        If OracleNotification("title:=Forms").Exist(0) Then
+              OracleNotification("title:=Forms").Approve
+         Else              
+         'wait(1)
+             If OracleNotification("title:=Warning").OracleButton("label:=Ok").Exist(0) Then
+             'If OracleNotification("Warning").OracleButton("Ok").Exist(0) Then
+                 'OracleNotification("Warning").OracleButton("Ok").Click
+                  OracleNotification("title:=Warning").OracleButton("label:=Ok").Click
+             Else 
+                OracleNotification("title:=Warning").Approve
+             End If
+         End If
+     wait(1)
+    Wend
+End Function 
+
+
+Function Intial_Test_Settings()
+    Dim App
+    Set App = CreateObject("QuickTest.Application")
+    Set qtTest=App.Test
+
+    Recovery_Path=Environment.Value("Library_Path")&"\Handle_Msgbox.qrs"
+    Recovery_Path1=Environment.Value("Library_Path")&"\TimeOutRecovery.qrs"
+    Recovery_Path3=Environment.Value("Library_Path")&"\Pdf Crash2.qrs"
+    Environment_Path=Environment.Value("Environment_Path")&"\Environment.xml"
+
+    'Associating A Enviironment file Path
+    Environment.LoadFromFile (Environment_Path)
+    ' Setting the folder paths
+
+    App.Folders.Add(Environment.Value("Library_Path"))
+    App.Folders.Add(Environment.Value("Repository_Path"))
+    App.Folders.Add(Environment.Value("Script_Path"))
+    'App.Folders.Add(Environment.Value("Library_Path"))
+
+    'Recovery Scenarios
+
+    Set qtTestRecovery = App.Test.Settings.Recovery
+    'removes all the existing recovery scenarios associated with the test
+    If qtTestRecovery.Count > 0 Then
+            qtTestRecovery.RemoveAll
+    End If
+
+'    qtTestRecovery.Add Recovery_Path1, "TimeOutRecovery" , 1
+'    qtTestRecovery.Add Recovery_Path, "Handle_Msg_box" , 2
+'    qtTestRecovery.Add Recovery_Path3, "Pdf Crash2" , 3
+
+
+
+    For intIndex = 1 To qtTestRecovery.Count
+            qtTestRecovery.Item(intIndex).Enabled = True
+    Next
+    qtTestRecovery.Enabled = true
+    qtTestRecovery.SetActivationMode "OnError"
+    Set qtTestRecovery = Nothing
+    Recovery.Enabled= True
+
+    'Loading Common.tsr
+    Load_OR("common")
+
+    Set qtTest=Nothing
+    Set App = Nothing 
+
+End Function
+
+Public Sub Time_Update (Table_Name, Column_Name)
+  Set cnn = get_Conn_Result
+  Set cmd= CreateObject("ADODB.Command")
+  Set cmd.ActiveConnection = cnn
+  Column_Name=Chr(34)&Column_Name&Chr(34)
+  If Table_Name = "Test_Result_Master" Then
+    'cmd.CommandText = "Update " & Table_Name & " Set " & Column_Name & " = '" & Now & "' Where Batch_ID = '" & Environment.Value("Test_ID") & "' And Batch_Run_ID  = '" & Environment.Value("Run_ID") & "' And Client_ID ='"  & Environment.Value("Client_ID") & "' And Version = '" & Environment.Value("Version") & "'"
+     cmd.CommandText = "Update " & Table_Name & " Set " & Column_Name & " = '" & Now & "' Where "&Chr(34)&"BATCH_ID"&Chr(34)&" = '" & Environment.Value("Test_ID") & "' And "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&"  = '" & Environment.Value("Run_ID") & "' And "&Chr(34)&"CLIENT_ID"&Chr(34)&" ='"  & Environment.Value("Client_ID") & "' And "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+  Else
+    'cmd.CommandText = "Update " & Table_Name & " Set " & Column_Name & " = '" & Now & "' Where Batch_ID = '" & Environment.Value("Test_ID") & "' And Batch_Run_ID  = '" & Environment.Value("Run_ID") & "' And Client_ID ='"  & Environment.Value("Client_ID") & "' And Version = '" & Environment.Value("Version") & "' And Seq_No = " & Environment.Value("Seq_No")
+    cmd.CommandText = "Update " & Table_Name & " Set " & Column_Name & " = '" & Now & "' Where "&Chr(34)&"Batch_ID"&Chr(34)&" = '" & Environment.Value("Test_ID") & "' And "&Chr(34)&"Batch_Run_ID"&Chr(34)&"  = '" & Environment.Value("Run_ID") & "' And "&Chr(34)&"CLIENT_ID"&Chr(34)&" ='"  & Environment.Value("Client_ID") & "' And "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "' And "&Chr(34)&"Seq_No"&Chr(34)&" = " & Environment.Value("Seq_No")
+  End If
+  cmd.Execute
+  Set cnn  = Nothing
+    Set cmd  = Nothing
+End Sub
+
+
+Function TestTimeDiff(strStrtTime,strEndTime, Table_Name, Column_Name) 
+ strhrs = DateDiff("h",strStrtTime,strEndTime)
+ strmins = DateDiff("n",strStrtTime,strEndTime)
+ strsecs = DateDiff("s",strStrtTime,strEndTime)
+  If Len(strhrs) < 2 Then
+  strhrs = "0" & strhrs
+ End If
+ If Len(strmins) < 2 Then
+  strmins = "0" & strmins
+ End If
+ If Len(strsecs) < 2 Then
+  strsecs = "0" & strsecs
+ End If
+ strTotalTime = strhrs & ":" & strmins & ":" & strsecs
+Column_Name=Chr(34)&Column_Name&Chr(34)
+  Set cnn = get_Conn_Result
+  Set cmd= CreateObject("ADODB.Command")
+  Set cmd.ActiveConnection = cnn
+  If Table_Name = "Test_Result_Master" Then
+    'cmd.CommandText = "Update " & Table_Name & " Set " & Column_Name & " = '" & strTotalTime & "' Where Batch_ID = '" & Environment.Value("Test_ID") & "' And Batch_Run_ID  = '" & Environment.Value("Run_ID") & "' And Client_ID ='"  & Environment.Value("Client_ID") & "' And Version = '" & Environment.Value("Version") & "'"
+      cmd.CommandText = "Update " & Table_Name & " Set " & Column_Name & " = '" & strTotalTime & "' Where "&Chr(34)&"BATCH_ID"&Chr(34)&" = '" & Environment.Value("Test_ID") & "' And "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&"  = '" & Environment.Value("Run_ID") & "' And "&Chr(34)&"CLIENT_ID"&Chr(34)&" ='"  & Environment.Value("Client_ID") & "' And "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+  ElseIf Table_Name = "Test_Result_Details" Then    
+    'cmd.CommandText = "Update " & Table_Name & " Set " & Column_Name & " = '" & strTotalTime & "' Where Batch_ID = '" & Environment.Value("Test_ID") & "' And Batch_Run_ID  = '" & Environment.Value("Run_ID") & "' And Client_ID ='"  & Environment.Value("Client_ID") & "' And Version = '" & Environment.Value("Version") & "' and Seq_No = " & Environment.Value("Seq_No")
+     cmd.CommandText = "Update " & Table_Name & " Set " & Column_Name & " = '" & strTotalTime & "' Where "&Chr(34)&"Batch_ID"&Chr(34)&" = '" & Environment.Value("Test_ID") & "' And "&Chr(34)&"Batch_Run_ID"&Chr(34)&"  = '" & Environment.Value("Run_ID") & "' And "&Chr(34)&"CLIENT_ID"&Chr(34)&" ='"  & Environment.Value("Client_ID") & "' And "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "' and "&Chr(34)&"Seq_No"&Chr(34)&" = " & Environment.Value("Seq_No")
+  End If
+  cmd.Execute
+  Set cnn  = Nothing
+  Set cmd  = Nothing
+ 
+End Function
+
+'Screen shot functions
+Function TestCreateWordTCHeader()    
+    Get_Results_Details Environment.Value("Test_ID"),"Test_Result_Master"
+    datatable.GetSheet("Test_Result_Master").SetCurrentRow(1)
+    Wait (2)
+ Set objWrdResult = CreateObject("Word.Application")
+ objWrdResult.Visible = False
+ Set objWrdResultDoc = objWrdResult.Documents.Open (Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID") & ".doc")
+ Set objSelection = objWrdResult.Selection   
+ objSelection.Font.Name = "Calibri"
+ objSelection.Font.Size = 14
+ objSelection.Font.Bold = False
+ objSelection.Font.Color = 0' 8388608  
+ objSelection.ParagraphFormat.Alignment = 1
+ objSelection.TypeText "AUTOMATION TEST EXECUTION RESULT"    
+ objSelection.Font.Size = 10
+ objSelection.TypeParagraph()
+ objWrdResultDoc.Save
+ 
+ objSelection.ParagraphFormat.Alignment = 0
+ 'objSelection.TypeParagraph()
+ Set objWrdRsltStartRange = objSelection.Range
+ objWrdResultDoc.Tables.Add objWrdRsltStartRange,7,2 
+ Set objResultTable = objWrdResultDoc.Tables(1)
+ objResultTable.Style = "Table Grid"
+ objResultTable.Borders.OutsideLineWidth = 12
+ objResultTable.Columns(1).Width = objWrdResult.CentimetersToPoints(3.45)
+ objResultTable.Columns(2).Width = objWrdResult.CentimetersToPoints(12.99)
+ objResultTable.Borders.OutsideColor = 0
+ objResultTable.Borders.InsideColor = 0
+ objResultTable.Range.Font.Bold = False
+ objResultTable.Range.Font.Color = 0
+ objResultTable.Range.ParagraphFormat.Alignment = 0
+ objResultTable.Cell(1,1).Range.Text = "Batch ID"
+  objResultTable.Cell(1,2).Range.Text = DataTable("BATCH_ID","Test_Result_Master")
+ objResultTable.Cell(2,1).Range.Text = "Test Case Name"
+ objResultTable.Cell(2,2).Range.Text = Environment.Value("Test_Case_Name")
+ objResultTable.Cell(3,1).Range.Text = "VM Address"
+ objResultTable.Cell(3,2).Range.Text = Environment.Value("LocalHostName")
+ objResultTable.Cell(4,1).Range.Text = "Run Start Time"
+ objResultTable.Cell(4,2).Range.Text = datatable("Start_Time","Test_Result_Master") 
+ objResultTable.Cell(5,1).Range.Text = "Run End Time" 
+ objResultTable.Cell(5,2).Range.Text = datatable("End_Time","Test_Result_Master")
+ objResultTable.Cell(6,1).Range.Text = "Run Total Time"
+ objResultTable.Cell(6,2).Range.Text = datatable("Execution_Time","Test_Result_Master")
+ objResultTable.Cell(7,1).Range.Text = "Result Status"
+ objResultTable.Cell(7,2).Range.Text =datatable("BATCH_STATUS","Test_Result_Master")
+ objSelection.TypeParagraph()
+' objSelection.TypeParagraph()
+ objWrdResultDoc.Save
+  objResultTable.Borders.OutsideColor = 0  
+ objResultTable.Borders.InsideColor = 0 
+
+ objWrdResultDoc.Save 
+ objWrdResult.Quit
+ 
+ Set objWrdRsltStartRange = Nothing
+ Set objSelection = Nothing
+ Set objResultTable = Nothing 
+ Set objWrdResultDoc = Nothing
+ Set objWrdResult = Nothing
+End Function
+'--------------------------------------------------------------------------------------------
+'Importing result details
+'-------------------------------------------------
+
+Function TestCreateWordResultFile()
+    strReusltFilePath=Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID") & ".doc"    
+    
+    'Verify if the result file already exists.
+    If TestCheckFileExists(strReusltFilePath)  Then
+        Exit Function
+    End If
+    
+    Set objWrdResult =CreateObject("Word.Application")
+    objWrdResult.Visible = False
+    Set objWrdResultDoc = objWrdResult.Documents.Add()
+    Set objSelection = objWrdResult.Selection
+    objSelection.Font.Name = "Calibri"
+    objSelection.Font.Size = 14
+    objSelection.Font.Bold = False
+    objSelection.Font.Color = 8388608  
+       objSelection.ParagraphFormat.Alignment = 1
+    objSelection.Font.Size = 10
+    objSelection.TypeParagraph()
+    objSelection.TypeParagraph()
+    objWrdResultDoc.SaveAs strReusltFilePath    
+    objWrdResult.Quit
+    Set objSelection = Nothing    
+    Set objWrdResultDoc = Nothing
+    Set objWrdResult = Nothing
+    
+End Function
+'-------------------------------------------------------------
+
+Function TestCheckFileExists(strFile)
+    Set objFolderCheck = CreateObject("Scripting.FileSystemObject")
+
+    'Verify the input to the function is not empty.
+    If strFile = "" Then    
+        TestReportWordResult "QTP","","TestCheckFileExists Function :- The input 'strFile' to the function should not be empty,hence exiting the function.","","","","Warning",""        
+        TestCheckFileExists = False
+        Exit Function
+    End If
+    TestCheckFileExists = objFolderCheck.FileExists(strFile)
+    Set objFolderCheck = Nothing
+End Function
+
+
+
+Function TestReportWordResult(strResultType)
+    If Environment.Value("Screenshot")="False" Then
+       Exit Function
+    End If
+    Call TestCreateWordResultFile()
+    strReusltFilePath= Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID") & ".doc"
+    
+    Select Case  UCASE (strStepStatus)
+        Case "PASS"
+            strQTPStatus = 0
+        Case "FAIL"
+            strQTPStatus = 1
+        Case "INFO"
+            strQTPStatus = 2
+        Case Else
+            strQTPStatus = 3
+    End Select
+    
+    Select Case Ucase(strResultType)
+        Case "QTP"
+            Reporter.ReportEvent strQTPStatus,strDescription,"Expected : " & strExpValue & " Actual : " & strActValue
+            Exit Function            
+        Case Else    
+            Reporter.ReportEvent strQTPStatus,strDescription,"Expected : " & strExpValue & " Actual : " & strActValue
+            
+            Set objWrdResult = CreateObject("Word.Application")
+            objWrdResult.Visible = False
+            Set objWrdResultDoc = objWrdResult.Documents.Open (strReusltFilePath)
+            Set objSelection = objWrdResult.Selection
+            objSelection.EndKey 6
+            
+            Set strSnapshotObject = OracleApplications("OracleApplications")
+            If IsObject(strSnapshotObject)Then
+
+                TestCaptureScreenShot(strSnapshotObject)
+                objSelection.EndKey 6
+                objSelection.TypeParagraph()
+                env=UCase (Environment.Value("LocalHostName"))
+                objSelection.InlineShapes.AddPicture Environment.Value("Screenshot_Path") &"\" & Environment.Value("LocalHostName") &".png", False,True
+                objSelection.TypeParagraph()
+                            
+            End If                
+
+            objSelection.EndKey 6                
+            objWrdResultDoc.Save 
+            objWrdResult.Quit
+            
+            Set objSelection = Nothing
+            Set objResultTable = Nothing
+            Set objWrdResultDoc = Nothing
+            Set objWrdResult = Nothing            
+    End Select    
+End Function
+
+
+Function TestCaptureScreenShot(strSnapshotObject)
+ 
+ If IsObject(strSnapshotObject) <> True Then 
+  Exit Function
+ End If   
+' strScreenShotFile = "Test_" & strTestScenario & Replace(Replace(FormatDateTime(Now,0),"/","-"),":",".") & ".png"
+ strScreenshotsPath = Environment.Value("Screenshot_Path") & strScreenShotFile
+ strSnapshotObject.CaptureBitmap Environment.Value("Screenshot_Path") & "\" & Environment.Value("LocalHostName") & ".png", True
+ Set strSnapshotObject = Nothing
+End Function
+
+
+ ' Function for compressing the word document 
+Function WindowsZip()
+    sFile=Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID") & ".doc"
+    'sZipFile=Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID")&"_"&Replace(Replace(FormatDateTime(Now,0),"/","-"),":",".")&".zip"
+    sZipFile=Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID")&".zip"      '&Replace(Replace(FormatDateTime(Now,0),"/","-"),":",".")&".zip"
+    
+    Set oZipShell = CreateObject("WScript.Shell")
+    Set oZipFSO = CreateObject("Scripting.FileSystemObject")
+ 
+    If Not oZipFSO.FileExists(sZipFile) Then
+        NewZip(sZipFile)
+    Else
+        Call Delete_File(Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID")&".zip")
+        NewZip(sZipFile)    
+    End If
+ 
+ Set oZipApp = CreateObject("Shell.Application") 
+ sZipFileCount = oZipApp.NameSpace(sZipFile).items.Count 
+ aFileName = Split(sFile, "\")
+ sFileName = (aFileName(Ubound(aFileName)))
+ 
+ 'listfiles
+ sDupe = False
+ For Each sFileNameInZip In oZipApp.NameSpace(sZipFile).items
+  If LCase(sFileName) = LCase(sFileNameInZip) Then
+   sDupe = True
+   Exit For
+  End If
+ Next
+ 
+ If Not sDupe Then
+  oZipApp.NameSpace(sZipFile).Copyhere sFile
+  'Keep script waiting until Compressing is done
+  On Error Resume Next
+  sLoop = 0
+  Do Until sZipFileCount < oZipApp.NameSpace(sZipFile).Items.Count
+  Wscript.Sleep(2)
+  sLoop = sLoop + 1
+  Loop
+   On Error GoTo 0
+ End If
+ General_CloseProcess
+ Call Delete_File(Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID")& ".doc") ' To delete the document after compressing
+ Call Delete_File(Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID")& ".xls")
+End Function
+
+Sub NewZip(sNewZip)
+    Set oNewZipFSO = CreateObject("Scripting.FileSystemObject")
+    Set oNewZipFile = oNewZipFSO.CreateTextFile(sNewZip) 
+    oNewZipFile.Write Chr(80) & Chr(75) & Chr(5) & Chr(6) & String(18, 0) 
+    oNewZipFile.Close
+    Set oNewZipFSO = Nothing
+End Sub
+
+' To delete the document after compressing the file
+Function Delete_File(strReusltFilePath)
+    If TestCheckFileExists(strReusltFilePath) = False Then
+        Exit Function
+    End If
+    'strReusltFilePath=Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_Case_Name")& extension
+    Set objfs = CreateObject("Scripting.FileSystemObject")
+   On Error GoTo 0 
+    On Error resume Next
+    objfs.DeleteFile strReusltFilePath
+    'MsgBox err.Number
+    While err.Number<>0
+        On Error resume Next
+        objfs.DeleteFile strReusltFilePath
+        Wait (1)
+        Wend
+   On Error GoTo 0 
+    Set objfs = Nothing
+End Function
+
+'Function Embed_Pdf(Pdf_Path)    'Original
+'    If Environment.Value("Screenshot")="False" Then
+'       Exit Function
+'    End If
+'    Dim file_Name
+'    If instr(Pdf_Path,"\") Then
+'        MyArray = Split(Pdf_Path, "\", -1, 1)
+'    End If        
+'    file_Name = MyArray (Ubound (MyArray))
+'        Set objWrdResult = CreateObject("Word.Application")
+'        objWrdResult.Visible = False
+'        TestCreateWordResultFile
+'        Set objWrdResultDoc = objWrdResult.Documents.Open (Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID") & ".doc")
+'        Set objSelection = objWrdResult.Selection
+'        objSelection.ParagraphFormat.Alignment = 1
+'        objSelection.EndKey 6
+'        icon = "C:\Windows\Installer\{AC76BA86-7AD7-1033-7B44-AA0000000001}\PDFFile_8.ico"
+'        ObjSelection.InlineShapes.AddOLEObject "AcroExch.Document.7",Pdf_Path, False, True, icon ,0, file_Name
+'        'ObjSelection.InlineShapes.AddOLEObject ClassType:="AcroExch.Document.7", FileName:= Pdf_Path, LinkToFile:=False, DisplayAsIcon:=True, IconFileName:= icon, IconIndex:=0, IconLabel:=file_Name
+'        objWrdResultDoc.Save 
+'        objWrdResultDoc.Close
+'        objWrdResult.Quit
+'        Set objSelection = Nothing 
+'        Set objWrdResultDoc = Nothing
+'        Set objWrdResult = Nothing
+'End Function
+
+Function Embed_Pdf(Pdf_Path)    'Temp modified
+    If Environment.Value("Screenshot")="False" Then
+       Exit Function
+    End If
+      i=1
+   While (TestCheckFileExists (Pdf_Path))=False
+       i=i+1
+       Wait (1)
+       If i=60 Then
+           Log_Test_Result_Details "FAILED", Environment.Value("Test_ID"), Environment.Value("Run_ID"), Environment("ActionIteration"),Environment.Value("dtRTSheet"), "Word cannot obtain data"
+           Environment.Value("Exception")="Stop"
+           Exit Function
+       End If
+   Wend
+    Dim file_Name
+    If instr(Pdf_Path,"\") Then
+        MyArray = Split(Pdf_Path, "\", -1, 1)
+    End If        
+    file_Name = MyArray (Ubound (MyArray))
+        Set objWrdResult = CreateObject("Word.Application")
+        objWrdResult.Visible = False
+        TestCreateWordResultFile
+        Set objWrdResultDoc = objWrdResult.Documents.Open (Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID") & ".doc")
+        Set objSelection = objWrdResult.Selection
+        objSelection.ParagraphFormat.Alignment = 1
+        objSelection.EndKey 6    
+ ObjSelection.InlineShapes.AddOLEObject "AcroExch.Document.7",Pdf_Path, False, True, "C:\Windows\Installer\{AC76BA86-7AD7-1033-7B44-AA0000000001}\PDFFile_8.ico", 0, file_Name
+        objWrdResultDoc.Save 
+        objWrdResultDoc.Close
+        objWrdResult.Quit
+        Set objSelection = Nothing 
+        Set objWrdResultDoc = Nothing
+        Set objWrdResult = Nothing
+End Function
+
+Function Embed_Excel()
+        Excel_Path=Environment.Value("Screenshot_Path") & "\" & Environment.Value("Test_ID") &".xls"
+        Get_Results_Details Environment.Value("Test_ID"), "Test_Result_Details"
+        datatable.ExportSheet Excel_Path,"Test_Result_Details"
+        Set objWrdResult = CreateObject("Word.Application")
+        objWrdResult.Visible = False
+        TestCreateWordResultFile
+        Set objWrdResultDoc = objWrdResult.Documents.Open (Environment.Value("Screenshot_Path") &"\" & Environment.Value("Test_ID") & ".doc")
+        Set objSelection = objWrdResult.Selection
+        objSelection.TypeParagraph()
+        objSelection.ParagraphFormat.Alignment = 1
+                                                                                                                                                                                
+        objSelection.InlineShapes.AddOLEObject "Excel.Sheet.8",Excel_Path, False, True, "C:\Windows\Installer\{90140000-0011-0000-0000-0000000FF1CE}\xlicons.exe", 1, "Test_Result_Details.xls"
+        objWrdResultDoc.Save 
+
+        Set objshell=CreateObject("WScript.Shell")
+        objshell.Run "TASKKILL /F /IM WINWORD.EXE"
+        Set objshell=nothing    
+
+        Set objSelection = Nothing 
+        Set objWrdResultDoc = Nothing
+        Set objWrdResult = Nothing
+End Function
+
+Function Get_Results_Details(Batch_ID, Result_Table)
+    Set getResults_conn = get_Conn_Result
+    Set objRecSet = CreateObject("ADODB.Recordset")
+    'Sql="Select Count(*) from " & Result_Table &" Where Batch_ID='" & Batch_ID & "'"
+    If Result_Table ="Test_Result_Master" Then
+        Sql="Select Count(*) from " & Result_Table &" Where "&Chr(34)&"BATCH_ID"&Chr(34)&"='" & Batch_ID & "'"
+    Else
+        Sql="Select Count(*) from " & Result_Table &" Where "&Chr(34)&"Batch_ID"&Chr(34)&"='" & Batch_ID & "'"
+    End If
+    
+    objRecSet.Open Sql, getResults_conn
+
+    If Result_Table ="Test_Result_Master"  Then
+    'sql="Select BATCH_ID, BATCH_RUN_ID, Start_Time, BATCH_STATUS, End_Time,Execution_Time from " & Result_Table &" Where Batch_ID='" & Batch_ID & "' and BATCH_RUN_ID='" &  Environment.Value("Run_ID") & "'"
+
+    sql="Select "&Chr(34)&"BATCH_ID"&Chr(34)&", "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&", "&Chr(34)&"Start_Time"&Chr(34)&", "&Chr(34)&"BATCH_STATUS"&Chr(34)&", "&Chr(34)&"End_Time"&Chr(34)&","&Chr(34)&"Execution_Time"&Chr(34)&" from " & Result_Table &" Where "&Chr(34)&"BATCH_ID"&Chr(34)&"='" & Batch_ID & "' and "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&"='" &  Environment.Value("Run_ID") & "'"
+    Else
+    'sql="Select Seq_No, Function, Function_Status, Function_Result, End_Function_Time from " & Result_Table &"  Where Batch_ID='" & Batch_ID &  "' and BATCH_RUN_ID='" &  Environment.Value("Run_ID") &"' Order By Seq_No"
+
+    sql="Select "&Chr(34)&"Seq_No"&Chr(34)&", "&Chr(34)&"Function"&Chr(34)&", "&Chr(34)&"Function_Status"&Chr(34)&", "&Chr(34)&"Function_Result"&Chr(34)&" from " & Result_Table &"  Where "&Chr(34)&"Batch_ID"&Chr(34)&"='" & Batch_ID &  "' and "&Chr(34)&"Batch_Run_ID"&Chr(34)&"='" &  Environment.Value("Run_ID") &"'"
+    End If
+
+    Load_Table objRecSet.Fields(0).Value, Result_Table, sql
+
+    Set getResults_conn = Nothing
+    Set objRecSet = Nothing
+End Function
+
+' To kill the word, excel and IE processes before invoking the TC execution
+Public Function General_CloseProcess()
+    strProgramName = Array("WINWORD.EXE", "IEXPLORE.EXE", "EXCEL.EXE","JAVA.EXE")
+    Dim objshell     
+    For Each i in strProgramName  
+         Set objshell=CreateObject("WScript.Shell")
+         objshell.Run "TASKKILL /F /IM "& i
+    Next 
+   Set objshell=nothing 
+End Function
+
+' To logout of the application
+Public Function Logout()
+    'Browser("application version:=internet explorer 8").CloseAllTabs
+    If Environment.Value("Exception")<> "Stop" Then
+
+    If OracleFormWindow("Main menu").Exist(0) Then
+        OracleFormWindow("Main menu").OracleButton("Exit").Click
+    End If
+    If OracleFormWindow("Transfer Agent Login").Exist(0) Then
+        OracleFormWindow("Transfer Agent Login").OracleButton("Exit").Click
+    End If
+    
+Else
+    Call ExitScreens()
+    Set objshell=CreateObject("WScript.Shell")
+    objshell.Run "TASKKILL /F /IM "& "IEXPLORE.EXE"
+    DataTable.DeleteSheet(Environment.Value("dtRTSheet"))
+End If
+
+
+End Function
+
+'
+
+Function Get_Batch_Seq_Details()
+   Set get_Conn_Result = Get_Connection_Results
+    Set get_Conn =Get_Connection
+    Set conn_Batch_Seq_Details = get_Conn
+    Set objRecSet_Batch_Seq_Details = CreateObject("ADODB.Recordset")
+    env=UCase (Environment.Value("LocalHostName"))
+    'sql="Select "&Chr(34)&"Batch_ID"&Chr(34)&" from Batch_Manager Where "&Chr(34)&"Run"&Chr(34)&" = 'True' and "&Chr(34)&"Local_VM"&Chr(34)&"='" & Trim(Cstr (env)) & "'"
+    sql="Select "&Chr(34)&"Batch_ID"&Chr(34)&" from Batch_Manager Where "&Chr(34)&"Run"&Chr(34)&" = 'True' and "&Chr(34)&"Local_VM"&Chr(34)&"='" & Trim(Cstr (env)) & "' order by " &Chr(34)&"Batch_ID"&Chr(34) 
+    objRecSet_Batch_Seq_Details.Open sql, conn_Batch_Seq_Details
+
+While (Not objRecSet_Batch_Seq_Details.EOF)
+         Batch_Execution_Details objRecSet_Batch_Seq_Details.Fields(0).Value
+         Uncheck_Executing_Batch objRecSet_Batch_Seq_Details.Fields(0).Value
+        objRecSet_Batch_Seq_Details.MoveNext
+    Wend
+
+'Get_Batch_Seq_Details()
+
+
+    
+
+    Set conn_Batch_Seq_Details = Nothing
+    Set objRecSet_Batch_Seq_Details = Nothing
+'conn_Batch_Seq_Details.close
+'objRecSet_Batch_Seq_Details.Close
+
+End Function
+
+Function Batch_Execution_Details(batch_ID)
+    Set conn_Batch_Execution_Details = get_Conn
+    Set objRecSet_Batch_Execution_Details = CreateObject("ADODB.Recordset")
+    sql="Select "&Chr(34)&"Batch_ID"&Chr(34)&","&Chr(34)&"Test_Case_Name"&Chr(34)&","&Chr(34)&"Screenshot"&Chr(34)&" from Batch_Manager Where "&Chr(34)&"Batch_ID"&Chr(34)&" = '" & batch_ID & "'"
+    objRecSet_Batch_Execution_Details.Open sql, conn_Batch_Execution_Details
+    Batch_Execution objRecSet_Batch_Execution_Details.Fields(0).Value, objRecSet_Batch_Execution_Details.Fields(1).Value, objRecSet_Batch_Execution_Details.Fields(2).Value
+    Set conn_Batch_Execution_Details = Nothing
+    Set objRecSet_Batch_Execution_Details = Nothing
+End Function
+
+
+
+
+Function Uncheck_Executing_Batch (batch_ID)   ' Added on 3rd March 2015
+              Set cnn = get_Conn_Result
+              Set rs= CreateObject("ADODB.RecordSet")
+              Batch_Run_ID=Environment.Value("Batch_Run_ID")
+                'Str="Select "&Chr(34)&"BATCH_STATUS"&Chr(34)&" From Test_Result_Master Where "&Chr(34)&"Batch_ID"&Chr(34)&" = '" & Batch_ID & "' And "&Chr(34)&"Batch_Run_ID"&Chr(34)&" = '" & Batch_Run_ID & "' And "&Chr(34)&"Client_ID"&Chr(34)&" = '" & Environment.Value("Client_ID") & "' And "&Chr(34)&"Version"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+
+                Str="Select "&Chr(34)&"BATCH_STATUS"&Chr(34)&" From Test_Result_Master Where "&Chr(34)&"BATCH_ID"&Chr(34)&" = '" & Batch_ID & "' And "&Chr(34)&"BATCH_RUN_ID"&Chr(34)&" = '" & Batch_Run_ID & "' And "&Chr(34)&"CLIENT_ID"&Chr(34)&" = '" & Environment.Value("Client_ID") & "' And "&Chr(34)&"VERSION"&Chr(34)&" = '" & Environment.Value("Version") & "'"
+                rs.Open str, cnn
+                Status=rs.Fields(0).Value
+                Set rs=nothing
+                Set cmd= CreateObject("ADODB.Command")
+             Set cmd.ActiveConnection = cnn
+              If Status="PASSED"  Then
+                    Set cnn = get_Conn
+                    Set cmd= CreateObject("ADODB.Command")
+                    Set cmd.ActiveConnection = cnn
+                cmd.CommandText = "UPDATE Batch_Manager SET "&Chr(34)&"Run"&Chr(34)&" = 'False' WHERE "&Chr(34)&"Batch_ID"&Chr(34)&" = '" & batch_ID & "'"    
+                cmd.Execute
+    Set cnn  = Nothing
+    Set cmd  = Nothing
+              End If                                                                
+End Function
+
+
+
+Public Function Login()
+
+    UserCode=Environment.Value("UserCode")
+    UserPassword=Environment.Value("UserPassword")
+    'UserCode=Environment.Value("HSM_User_Code")
+    'UserPassword=Environment.Value("HSM_User_Password")
+   MF_URL=Environment.Value("ORACLE_URL_ENV")
+    SystemUtil.Run "iexplore.exe",MF_URL
+    counter=1
+     While OracleFormWindow("short title:=Transfer Agent Login").Exist(90)  = False
+         
+'          Wait(30)
+'          counter=counter+1
+'          If counter=100 Then
+              Set objshell=CreateObject("WScript.Shell")
+                objshell.Run "TASKKILL /F /IM "& "IEXPLORE.EXE"
+                wait 5
+                SystemUtil.Run "iexplore.exe",MF_URL
+
+'          End If
+      Wend
+While OracleFormWindow("short title:=Transfer Agent Login").OracleTextField("description:=User name:").Exist(0)  = False
+          Wait(1)
+      Wend
+      OracleFormWindow("short title:=Transfer Agent Login").OracleTextField("description:=User name:").Enter UserCode
+    If OracleFormWindow("short title:=Transfer Agent Login").OracleTextField("description:=User name:").Exist(0) Then
+          'OracleFormWindow("short title:=Transfer Agent Login").OracleTextField("description:=Password:","tooltip:=Enter your Password (check Caps Lock)").Enter UserPassword ' Added by VSA
+           ' OracleFormWindow("Transfer Agent Login").OracleTextField("Password:").Enter UserPassword
+        OracleFormWindow("title:=Transfer Agent Login").OracleTextField("description:=Password:","enabled:=True").Enter UserPassword 'Added by NMI
+    ElseIf OracleFormWindow("short title:=Transfer Agent Login").OracleTextField("description:=Password:").Exist(0) Then
+          OracleFormWindow("short title:=Transfer Agent Login").OracleTextField("description:=Password:").Enter "MFTS"
+    End If
+      OracleFormWindow("short title:=Transfer Agent Login").OracleButton("label:=Connect").Click
+
+If OracleNotification("Error").Exist(3)="True" Then
+error_msg=OracleNotification("Error").GetROProperty("message")
+If instr(error_msg,"You are already connected 3 times in Global Investor. The maximum number of sessions is reached !") Then
+    OracleNotification("Error").OracleButton("Ok").Click
+    OracleFormWindow("short title:=Transfer Agent Login").OracleTextField("description:=User name:").Enter "vsa"
+    'OracleFormWindow("Transfer Agent Login").OracleTextField("Password:").Enter "vsa"
+    OracleFormWindow("title:=Transfer Agent Login").OracleTextField("description:=Password:","enabled:=True").Enter "vsa" 'Added by NMI
+    OracleFormWindow("short title:=Transfer Agent Login").OracleButton("label:=Connect").Click
+End If
+End If 
+
+  
+End Function
+
+
+public function fnGenerateName(type1,val)
+
+StringType=type1
+
+if StringType="Numbers" then
+
+strAlpha="1,2,3,4,5,6,7,8,9"
+
+else
+
+strAlpha="A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z"
+
+end if
+
+ 
+
+AlphaArray=split(strAlpha,",")
+
+arrIndexL=Lbound(AlphaArray)
+
+arrIndexU=Ubound(AlphaArray)
+
+Randomize
+
+i=0
+
+do until i=val
+
+                Myvalue=Int((arrIndexU-arrIndexL+1)*RND+arrIndexL)
+
+                Redim Preserve MyFinalValue(i)
+
+                MyFinalValue(i)=AlphaArray(Myvalue)
+
+                CreateName=MyFinalValue(i)
+
+                CreateUserValue=CreateUserValue&CreateName
+
+                fnGenerateName=CreateUserValue
+
+                i=i+1
+
+Loop
+
+End function
+
+
+
+'-----------------------------------
+
+' Function to get the static data values from global.sheet
+
+Public Function Get_Static_Data(Static_Data,row_no)
+
+datatable.GetSheet("Global").SetCurrentRow row_no
+Select Case Static_Data
+
+Case "Exch_Grp"
+       var=datatable("Exch_Grp",dtGlobalSheet)
+    
+Case "Comm_Grp"
+    var=datatable("Comm_Grp",dtGlobalSheet)
+
+
+Case "Security"
+    var=datatable("Security",dtGlobalSheet)
+    
+
+Case "MF_Fund"
+    var=datatable("MF_Fund",dtGlobalSheet)
+    
+
+Case "TA_Fund"    
+    var=datatable("TA_Fund",dtGlobalSheet)
+
+Case "TFC"
+    var=datatable("TFC",dtGlobalSheet)
+
+Case "Agent"
+    var=datatable("Agent",dtGlobalSheet)
+
+Case "Client"
+    var=datatable("Client",dtGlobalSheet)
+
+Case "Register"
+    var=datatable("Register",dtGlobalSheet)
+    
+Case "Fund_Promoter"
+    var=datatable("Fund_Promoter",dtGlobalSheet)
+    
+Case "Dist_Agreement"
+    var=datatable("Dist_Agreement",dtGlobalSheet)
+
+  End Select
+    Get_Static_Data=var
+
+datatable.GetSheet("Global").SetCurrentRow 1
+
+End Function
+
+
+'-----------------------------------------------
+
+'Function to set the static data values in globalsheet
+
+
+
+
+Function Set_Static_Data(Static_Data,row_no)
+
+datatable.GetSheet("Global").SetCurrentRow row_no
+Select Case Static_Data
+
+Case "Exch_Grp"
+    var=fnGenerateName ("Alpha",3)
+    datatable("Exch_Grp",dtGlobalSheet)=var
+    
+    Case "Comm_Grp"
+    var=fnGenerateName ("Alpha",3)
+    datatable("Comm_Grp",dtGlobalSheet)=var
+
+
+Case "Security"
+     var=fnGenerateName ("Numbers",10)
+    datatable("Security",dtGlobalSheet)=var
+    
+
+Case "MF_Fund"
+     var=fnGenerateName ("Alpha",5)
+    datatable("MF_Fund",dtGlobalSheet)=var
+    
+
+Case "TA_Fund"    
+    var=fnGenerateName ("Alpha",5)
+    datatable("TA_Fund",dtGlobalSheet)=var
+
+Case "TFC"
+ 
+    var=OracleFormWindow("TATFC03").OracleTextField("TFC ID").GetROProperty("value")
+    datatable("TFC",dtGlobalSheet)=var
+
+Case "Agent"
+     var=fnGenerateName ("Numbers",5)
+    datatable("Agent",dtGlobalSheet)=var
+    
+Case "Dist_Agreement"
+     var=fnGenerateName ("Numbers",5)
+    datatable("Dist_Agreement",dtGlobalSheet)=var    
+
+
+Case "Client"
+   
+    var=OracleFormWindow("TACLI02").OracleTextField("Client ID").GetROProperty("value")
+    datatable("Client",dtGlobalSheet)=var
+
+
+Case "Register"
+    
+     var=OracleFormWindow("TAREG02").OracleTextField("Register ID").GetROProperty("value")
+    datatable("Register",dtGlobalSheet)=var
+    
+Case "Fund_Promoter"
+    
+     var=OracleFormWindow("TAFPR03").OracleTextField("Fund promoter ID").GetROProperty("value")
+    Datatable("Fund_Promoter",dtGlobalSheet)=var
+    
+'Case "Dist_Agreement"
+    
+  ' var=OracleFormWindow("TARET11").OracleTextField("Agreement ID / Name*").GetROProperty("value")
+    'Datatable("Dist_Agreement",dtGlobalSheet)=var
+    
+End Select
+datatable.GetSheet("Global").SetCurrentRow 1
+
+Set_Static_Data=var
+
+End Function
+'--------------------------------------------------------------------------------
+
+
+Public Function ExitScreens()
+   Do while OracleFormWindow("title:=.*").OracleButton("description:=Exit").Exist(2) 
+        OracleFormWindow("title:=.*").OracleButton("description:=Exit").Click
+        Handle_Message_Boxes()
+   Loop
+End Function
+
+
+
+
